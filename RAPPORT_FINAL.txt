@@ -1,0 +1,127 @@
+RAPPORT FINAL — FF2018-Menu
+============================================================
+Date : 2026-11-07
+Repo : https://github.com/LKJKL90/FF2018-Menu
+Statut build : SUCCES
+Run : https://github.com/LKJKL90/FF2018-Menu/actions/runs/42326856268
+Commit de build : 1b2a78a
+============================================================
+
+1. ARTEFACTS
+------------------------------------------------------------
+Dylib local (fat, arm64 + arm64e) :
+  C:\Users\Addez\Downloads\adem projet\FF2018-Menu\out\FF2018Menu.dylib
+  (copie racine du repo : FF2018Menu.dylib)
+
+Taille : 169 232 octets
+Magic : cafebabe00000002 -> FAT binary, 2 architectures
+SHA256 : 3DCDE9B060E1FB9BDFB21F014BE8D4323E8CAE37187777A9189B17F9F059DCC5
+
+Deb local :
+  C:\Users\Addez\Downloads\adem projet\FF2018-Menu\out\deb\com.lkjkl90.ff2018menu_1.0.0_iphoneos-arm.deb
+Taille : 10 560 octets
+
+Ubinaires par architecture (non merges) :
+  out\arm64\FF2018Menu.dylib
+  out\arm64e\FF2018Menu.dylib
+  + dSYM de debug pour chaque arch
+
+2. ERREURS RENCONTREES / CORRECTIONS
+------------------------------------------------------------
+Iteration 1 — ECHEC (28 s)
+  Erreur :
+    Tweak.xm:60:12: error: unused function 'ReadInt' [-Werror,-Wunused-function]
+    Tweak.xm:72:13: error: unused function 'WriteFloat' [-Werror,-Wunused-function]
+    Tweak.xm:87:18: error: unused function 'GetBaseGame' [-Werror,-Wunused-function]
+  Cause : Theos compile avec -Werror, les 3 helpers statiques ne sont
+          utilises nulle part dans le tweak.
+  Correction : Makefile -> CFLAGS += -Wno-unused-function
+  Commit : 9b01e42
+
+Iteration 2 — ECHEC (51 s)
+  Erreur :
+    You are missing a filter property list. Make sure it's named
+    "FF2018Menu.plist" or "Filter.plist".
+  Cause : Theos exige un filter plist pour le staging d'un tweak.
+  Correction : ajout de FF2018Menu.plist -> Filter = com.dts.freefireth
+  Commit : cb78aff
+
+Iteration 3 — ECHEC (45 s)
+  Erreur :
+    make package requires you to have a control file either in the
+    layout/DEBIAN/ directory or in the project root.
+  Cause : pas de fichier control -> impossible de generer le .deb.
+  Correction : ajout du fichier control
+               (Package com.lkjkl90.ff2018menu, Architecture iphoneos-arm)
+  Commit : 1b2a78a
+
+Iteration 4 — SUCCES (43 s)
+  arm64  : preprocessing + compile + link + strip OK
+  arm64e : preprocessing + compile + link + strip OK
+  merge lipo OK, ldid signing OK, stage OK, .deb genere OK
+
+Aucune modification du code source fourni (Tweak.xm / main.cpp) n'a ete
+necessaire. Seuls des fichiers de build manquants ont ete ajoutes.
+Avertissements non bloquants restants :
+  ld: warning: -undefined dynamic_lookup is deprecated on iOS
+  ld: warning: -multiply_defined is obsolete
+(attendus avec le SDK iOS 26 / Xcode 26.6, sans impact sur le binaire)
+
+3. CONTENU DU REPO
+------------------------------------------------------------
+Tweak.xm                  code du menu (inchange)
+main.cpp                  ancre de compilation (inchange)
+Makefile                  + -Wno-unused-function
+FF2018Menu.plist          filter MobileLoader (com.dts.freefireth)
+control                   metadata du .deb
+.github/workflows/build.yml  build CI (macos-latest + Theos)
+FF2018Menu.dylib          binaire fat pret a installer
+out/                      artefacts du build (dylib, dSYM, deb)
+RAPPORT_FINAL.txt         ce fichier
+
+4. INSTALLATION SUR IPHONE JAILBREAK
+------------------------------------------------------------
+Methode A — .deb via Filza / Sileo / Zebra
+  1. Copier com.lkjkl90.ff2018menu_1.0.0_iphoneos-arm.deb sur l'iPhone
+  2. Ouvrir avec Filza -> Installer (dpkg)
+     ou  : dpkg -i com.lkjkl90.ff2018menu_1.0.0_iphoneos-arm.deb
+  3. Respring
+
+Methode B — dylib manuel
+  1. Copier FF2018Menu.dylib dans :
+       /Library/MobileSubstrate/DynamicLibraries/
+  2. Creer /Library/MobileSubstrate/DynamicLibraries/FF2018Menu.plist :
+
+       {
+           Filter = {
+               Bundles = (
+                   "com.dts.freefireth"
+               );
+           };
+       }
+
+  3. Permissions :
+       chown root:wheel FF2018Menu.dylib FF2018Menu.plist
+       chmod 0644 FF2018Menu.dylib FF2018Menu.plist
+  4. Respring :
+       killall -9 SpringBoard
+  5. Lancer Free Fire -> un bouton "FF" apparait, le menu s'ouvre
+     automatiquement apres 2 s. Logs prefixe [FF2018] dans la console.
+
+5. NOTES TECHNIQUES
+------------------------------------------------------------
+- Le binaire est FAT : il couvre les devices arm64 (A11 et anterieurs
+  en mode arm64) et arm64e (A12+). Pas besoin de choisir une slice.
+- Le hook MSHookFunction cible IL2CPP base + RVA 0x9093E4
+  (Player.LateUpdate). Si le dylib est charge avant que libil2cpp
+  soit mappe, le hook echoue silencieusement -> verifier
+  "[FF2018] Hook installe" dans les logs. Le constructor attend 2 s
+  pour laisser le moteur s'initialiser.
+- Offsets (0x498..0x588 pour les HP, 0xA0 pour IsClientBot,
+  0xCC pour TeamMapMark) sont ceux du dump 2018 : ils ne valident
+  que sur la version de Free Fire correspondante.
+- La CI tourne sur macos-latest (macOS 15 arm64, Xcode 26.6) avec
+  Theos latest + ldid. Le workflow se declenche sur push main et
+  manuellement via l'onglet Actions.
+
+FIN DU RAPPORT

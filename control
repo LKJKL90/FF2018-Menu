@@ -1,0 +1,9 @@
+Package: com.lkjkl90.ff2018menu
+Name: FF2018Menu
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Free Fire 2018 Mod Menu
+Maintainer: LKJKL90
+Author: LKJKL90
+Section: Tweaks
+Depends: mobilesubstrate

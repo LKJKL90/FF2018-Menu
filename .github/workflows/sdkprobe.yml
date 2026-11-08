@@ -1,0 +1,42 @@
+name: SDK framework presence check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/sdkprobe.yml'
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - name: List simulator runtimes
+        run: |
+          xcrun simctl list runtimes || true
+          echo "--- runtime roots ---"
+          ls -d /Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime 2>/dev/null || true
+          ls -d /Library/Developer/CoreSimulator/Volumes/*/Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime 2>/dev/null || true
+
+      - name: Framework presence in iOS simulator runtime
+        run: |
+          set +e
+          ROOT=$(ls -d /Library/Developer/CoreSimulator/Volumes/*/Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime 2>/dev/null | tail -1)
+          [ -z "$ROOT" ] && ROOT=$(ls -d /Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime 2>/dev/null | tail -1)
+          echo "runtime root: $ROOT"
+          RT="$ROOT/Contents/Resources/RuntimeRoot"
+          echo "RuntimeRoot: $RT"
+          for f in iAd GLKit OpenGLES Social OpenAL MobileCoreServices CoreImage StoreKit MessageUI MediaPlayer MediaToolbox CoreTelephony MessageUI AssetsLibrary AVFoundation CoreMotion; do
+            if [ -e "$RT/System/Library/Frameworks/$f.framework" ]; then echo "PRESENT  $f"; else echo "MISSING  $f"; fi
+          done
+          for l in libsqlite3.dylib libz.1.dylib libc++.1.dylib libresolv.9.dylib libiconv.2.dylib libobjc.A.dylib; do
+            if [ -e "$RT/usr/lib/$l" ]; then echo "PRESENT  $l"; else echo "MISSING  $l"; fi
+          done
+
+      - name: Framework presence in iPhoneOS SDK
+        run: |
+          set +e
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "sdk: $SDK"
+          for f in iAd GLKit OpenGLES Social OpenAL MobileCoreServices; do
+            if [ -e "$SDK/System/Library/Frameworks/$f.framework" ]; then echo "SDK PRESENT  $f"; else echo "SDK MISSING  $f"; fi
+          done

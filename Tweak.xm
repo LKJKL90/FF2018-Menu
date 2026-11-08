@@ -150,8 +150,24 @@ static void CachePlayer(uintptr_t player) {
 // ============================================================
 // HOST
 // ============================================================
+// Vue racine transparente : seule la zone du panneau capte les touches.
+// Sans ça la fenêtre overlay avale tous les taps du jeu (bouton
+// "actualiser" de l'écran de démarrage, etc.).
+@interface HostView : UIView @end
+@implementation HostView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *v = [super hitTest:point withEvent:event];
+    return (v == self) ? nil : v;
+}
+@end
+
 @interface PanelHost : UIViewController @end
 @implementation PanelHost
+- (void)loadView {
+    HostView *v = [[HostView alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    v.backgroundColor = [UIColor clearColor];
+    self.view = v;
+}
 - (BOOL)shouldAutorotate { return YES; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations {
     return UIInterfaceOrientationMaskLandscape;

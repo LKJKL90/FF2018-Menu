@@ -51,16 +51,24 @@ fd 83 00 91   add  x29, sp, #32
 ## Injection
 
 ```
-python tools/inject_ipa.py <source.ipa> out7/FFF_XZ.dylib <out.ipa>
+python tools/inject_ipa.py <source.ipa> out71/FFF_XZ.dylib <out.ipa> --weak-mod
 ```
 
 Le script :
 
 - localise `Payload/<X>.app/<X>`
-- ajoute `LC_LOAD_DYLIB @rpath/FFF_XZ.dylib` dans le padding du header
+- ajoute `LC_LOAD_WEAK_DYLIB @rpath/FFF_XZ.dylib` dans le padding du header
   Mach-O (21 752 octets libres, aucun déplacement de données)
-- copie le dylib dans `Payload/freefireth.app/Frameworks/`
-- réécrit l'archive
+- copie le dylib dans `Payload/freefireth.app/Frameworks/` en **0755**
+- **recopie chaque entrée zip avec ses permissions d'origine**
+
+Le dernier point est critique : `zipfile.writestr(nom, data)` crée des
+entrées en `0600`. Le binaire principal perdait alors son bit exécutable
+et iOS refusait de lancer l'app — écran noir puis fermeture immédiate,
+avant même le chargement du dylib.
+
+`--weak-mod` rend le chargement non bloquant : si dyld refuse le dylib,
+le jeu démarre quand même (sans menu) au lieu de mourir au lancement.
 
 La signature de l'app devient invalide : iLoader/zsign re-signe
 l'ensemble après import.

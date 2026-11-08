@@ -593,7 +593,9 @@ static void KeepOverlayAlive(void) {
 // ============================================================
 // HOOK PLAYER.LATEUPDATE (activé par INJECT uniquement)
 // ============================================================
-extern void xz_patch_fn(void *symbol, void *replace, void **result);
+// patch_shim.c est du C : sans extern "C" le .xm (ObjC++) reclame un
+// symbole C++ manglE qui n'existe pas -> dyld echoue au premier appel.
+extern "C" void xz_patch_fn(void *symbol, void *replace, void **result);
 
 static void (*orig_PlayerLateUpdate)(void *self);
 static void hooked_PlayerLateUpdate(void *self) {

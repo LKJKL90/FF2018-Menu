@@ -147,6 +147,15 @@ static void CachePlayer(uintptr_t player) {
 // ============================================================
 // MENU FLOTTANT
 // ============================================================
+@interface MenuHostViewController : UIViewController @end
+@implementation MenuHostViewController
+- (BOOL)shouldAutorotate { return YES; }
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
+    return UIInterfaceOrientationMaskLandscape;
+}
+- (BOOL)prefersStatusBarHidden { return YES; }
+@end
+
 @interface MenuViewController : UIViewController @end
 @implementation MenuViewController
 - (void)viewDidLoad {
@@ -154,7 +163,6 @@ static void CachePlayer(uintptr_t player) {
     self.view.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
     self.view.layer.cornerRadius = 12;
     self.view.layer.masksToBounds = YES;
-    self.view.frame = CGRectMake(20, 120, 240, 300);
 
     CGFloat y = 10;
     UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(10, y, 220, 24)];
@@ -198,22 +206,52 @@ static void CachePlayer(uintptr_t player) {
 - (void)toggleFly:(UISwitch*)s { g_flyEnabled = s.isOn; }
 - (void)toggleTest:(UISwitch*)s { g_testMode = s.isOn; }
 - (void)closeMenu:(UIButton*)b { [MenuViewController hide]; }
++ (UIWindow *)menuWindow {
+    if (g_menuWindow) return g_menuWindow;
+
+    UIWindowScene *scene = nil;
+    for (UIScene *s in [UIApplication sharedApplication].connectedScenes) {
+        if ([s isKindOfClass:[UIWindowScene class]] &&
+            (s.activationState == UISceneActivationStateForegroundActive ||
+             s.activationState == UISceneActivationStateForegroundInactive)) {
+            scene = (UIWindowScene *)s;
+            break;
+        }
+    }
+
+    if (scene) {
+        g_menuWindow = [[UIWindow alloc] initWithWindowScene:scene];
+    } else {
+        g_menuWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    }
+    g_menuWindow.windowLevel = UIWindowLevelAlert + 100;
+    g_menuWindow.backgroundColor = [UIColor clearColor];
+
+    g_hostVC = [[MenuHostViewController alloc] init];
+    g_hostVC.view.backgroundColor = [UIColor clearColor];
+    g_menuWindow.rootViewController = g_hostVC;
+    g_menuWindow.hidden = NO;
+    return g_menuWindow;
+}
+
 + (void)show {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (g_menuVisible) return;
+        UIWindow *w = [MenuViewController menuWindow];
         if (!g_menuVC) g_menuVC = [[MenuViewController alloc] init];
-        if (!g_menuWindow) {
-            g_menuWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-            g_menuWindow.windowLevel = UIWindowLevelAlert + 100;
-            g_menuWindow.backgroundColor = [UIColor clearColor];
-            g_menuWindow.rootViewController = g_menuVC;
-        }
-        [g_menuWindow makeKeyAndVisible];
+        if (!g_menuVC.view.superview) [g_hostVC.view addSubview:g_menuVC.view];
+
+        // Le panneau est une sous-vue, pas la vue racine : sinon UIKit la
+        // redimensionne aux bornes de la fenetre et le menu couvre tout l'ecran.
+        CGRect b = w.bounds;
+        CGFloat h = b.size.height - 32;
+        if (h > 340) h = 340;
+        g_menuVC.view.frame = CGRectMake(16, 16, 340, h);
+        g_menuVC.view.hidden = NO;
         g_menuVisible = YES;
     });
 }
 + (void)hide {
-    dispatch_async(dispatch_get_main_queue(), ^{ [g_menuWindow setHidden:YES]; g_menuVisible = NO; });
+    dispatch_async(dispatch_get_main_queue(), ^{ g_menuVC.view.hidden = YES; g_menuVisible = NO; });
 }
 @end
 
@@ -237,14 +275,17 @@ static FloatingButton *g_fab = nil;
 static void ShowFab() {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (g_fab) return;
+        UIWindow *w = [MenuViewController menuWindow];
+        CGRect b = w.bounds;
+
         g_fab = [FloatingButton buttonWithType:UIButtonTypeCustom];
-        g_fab.frame = CGRectMake(20, 200, 50, 50);
+        g_fab.frame = CGRectMake(b.size.width - 70, 20, 54, 54);
         [g_fab setTitle:@"FF" forState:UIControlStateNormal];
         [g_fab setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         g_fab.backgroundColor = [UIColor colorWithRed:0.8 green:0.2 blue:0.2 alpha:0.9];
-        g_fab.layer.cornerRadius = 25;
+        g_fab.layer.cornerRadius = 27;
         [g_fab addTarget:[MenuViewController class] action:@selector(show) forControlEvents:UIControlEventTouchUpInside];
-        [[UIApplication sharedApplication].keyWindow addSubview:g_fab];
+        [w addSubview:g_fab];
     });
 }
 

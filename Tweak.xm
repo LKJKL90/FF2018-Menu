@@ -612,13 +612,8 @@ static void InstallLateUpdateHook() {
 // ============================================================
 // INIT
 // ============================================================
-extern void xz_stealth_init(void);
-
 __attribute__((constructor))
 static void initMenu() {
-    // On se masque avant tout appel de l'anti-cheat.
-    @try { xz_stealth_init(); } @catch (NSException *e) {}
-
     // Laisse le jeu démarrer (auth/update) avant d'afficher quoi que ce soit.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
 #ifndef FF_NO_UI

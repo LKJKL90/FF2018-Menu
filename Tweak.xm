@@ -9,10 +9,6 @@
 
 #import "xz_strings.h"
 
-// neutralisation du compteur de soupcons de l'anti-cheat (stealth3.c)
-extern "C" int xz_ac_patch(void);
-extern "C" int xz_ac_state(void);
-
 // ============================================================
 // OFFSETS (dump Free Fire 2018)
 // ============================================================
@@ -485,13 +481,6 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
 }
 
 - (void)tick {
-    // point d'etat : vert = compteur de soupcons neutralise, rouge = non
-    UIColor *stc = xz_ac_state() ? XZ_GREEN
-                                 : [UIColor colorWithRed:1.0 green:0.1 blue:0.15 alpha:1.0];
-    if (_dot) {
-        _dot.backgroundColor = stc;
-        _dot.layer.shadowColor = stc.CGColor;
-    }
     _stBase.text = [NSString stringWithFormat:@"0x%llx",
                     (unsigned long long)GetIl2CppBase()];
     _stHook.text = g_hookInstalled ? XZS(18) : XZS(17);
@@ -629,10 +618,6 @@ static void InstallLateUpdateHook() {
 // ============================================================
 __attribute__((constructor))
 static void initMenu() {
-    // Coupe le compteur de soupcons avant tout rapport de l'anti-cheat.
-    // Aucune ecriture si les octets du binaire ne correspondent pas.
-    @try { xz_ac_patch(); } @catch (NSException *e) {}
-
     // Laisse le jeu démarrer (auth/update) avant d'afficher quoi que ce soit.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
 #ifndef FF_NO_UI

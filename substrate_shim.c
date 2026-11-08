@@ -17,8 +17,8 @@
 // n'est demandée, donc pas besoin de l'entitlement dynamic-codesigning.
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
-#import <Foundation/Foundation.h>
 #include <mach/mach.h>
 #include <mach/vm_map.h>
 #include <mach/vm_prot.h>
@@ -86,8 +86,8 @@ void MSHookFunction(void *symbol, void *replace, void **result) {
     if (_ff_next_slot >= HOOK_SLOTS) return;
 
     if (!_ff_is_executable((uintptr_t)symbol)) {
-        NSLog(@"[FF2018] hook refuse: 0x%llx n'est pas du code executable",
-              (unsigned long long)(uintptr_t)symbol);
+        fprintf(stderr, "[FF2018] hook refuse: 0x%llx n'est pas du code executable\n",
+                (unsigned long long)(uintptr_t)symbol);
         return;
     }
 

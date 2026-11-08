@@ -171,6 +171,19 @@ static int patch_image(const struct mach_header *mh, intptr_t slide) {
 
     if (!le || !dysym || !st) return 0;
 
+    // Sans slide valide, le_base pointerait sur l'adresse 0 : on ne tente
+    // rien plutot que de lire n'importe ou et tuer le process.
+    if (!real_slide || slide == 0) return 0;
+
+    // Tous les offsets de la table de symboles doivent tomber dans
+    // __LINKEDIT. Un decalage foireux = lecture hors mapping = crash.
+    const uint64_t le_lo = le->fileoff;
+    const uint64_t le_hi = le->fileoff + le->filesize;
+    if (st->symoff < le_lo || st->symoff + (uint64_t)st->nsyms * 16 > le_hi) return 0;
+    if (st->stroff < le_lo || st->stroff + st->strsize > le_hi) return 0;
+    if (dysym->indirectsymoff < le_lo ||
+        dysym->indirectsymoff + (uint64_t)dysym->nindirectsyms * 4 > le_hi) return 0;
+
     const uint8_t *le_base = (const uint8_t *)(slide + (intptr_t)le->vmaddr);
     const struct nlist_64 *syms = (const struct nlist_64 *)(le_base + (st->symoff - le->fileoff));
     const char *strs = (const char *)(le_base + (st->stroff - le->fileoff));
@@ -195,9 +208,11 @@ static int patch_image(const struct mach_header *mh, intptr_t slide) {
 
         uint32_t nslots = (uint32_t)(size / 8);
         for (uint32_t i = 0; i < nslots; i++) {
+            if (res + i >= dysym->nindirectsyms) break;
             uint32_t symidx = indirect[res + i];
             if (symidx == INDIRECT_SYMBOL_LOCAL || symidx == INDIRECT_SYMBOL_ABS) continue;
             if (symidx >= st->nsyms) continue;
+            if (syms[symidx].n_un.n_strx >= st->strsize) continue;
             const char *nm = strs + syms[symidx].n_un.n_strx;
             if (!nm || !*nm) continue;
             for (int k = 0; k < ntab; k++) {

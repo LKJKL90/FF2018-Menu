@@ -614,8 +614,17 @@ static void InstallLateUpdateHook() {
 // ============================================================
 // INIT
 // ============================================================
+// Masquage ciblé de notre image pour libac_sdk (voir stealth2.c).
+// Le constructeur de stealth2.c s'en occupe déjà ; ce rappel couvre le cas
+// où l'anti-cheat serait mappé après nous.
+extern "C" void xz_stealth2_retry(void);
+
 __attribute__((constructor))
 static void initMenu() {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        @try { xz_stealth2_retry(); } @catch (NSException *e) {}
+    });
+
     // Laisse le jeu démarrer (auth/update) avant d'afficher quoi que ce soit.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
 #ifndef FF_NO_UI

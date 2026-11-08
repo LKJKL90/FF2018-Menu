@@ -197,10 +197,15 @@ def main():
     with open(dylib_path, "rb") as d:
         dylib_bytes = bytearray(d.read())
 
-    if patch_dylib_id(dylib_bytes, install_name):
-        print(f"  LC_ID_DYLIB -> {install_name}")
+    if "--fix-id" in sys.argv[4:]:
+        if patch_dylib_id(dylib_bytes, install_name):
+            print(f"  LC_ID_DYLIB -> {install_name} (signature à refaire)")
+        else:
+            print("  LC_ID_DYLIB inchangé (pas de place)")
+    elif b"MobileSubstrate" in dylib_bytes:
+        print("  attention: LC_ID_DYLIB contient encore MobileSubstrate")
     else:
-        print("  LC_ID_DYLIB inchangé (pas de place)")
+        print(f"  LC_ID_DYLIB propre")
 
     with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED,
                                                       compresslevel=1) as zout:

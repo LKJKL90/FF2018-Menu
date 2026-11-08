@@ -587,8 +587,12 @@ static void initMenu() {
     // Laisse le jeu démarrer (auth/update) avant d'afficher quoi que ce soit.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
 #ifndef FF_NO_UI
-        ShowFab();
-        [PanelController show];
+        @try {
+            ShowFab();
+            [PanelController show];
+        } @catch (NSException *e) {
+            // une exception UI ne doit jamais tuer le jeu
+        }
 #endif
     });
 }

@@ -1,0 +1,43 @@
+name: Build diagnostic variants
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/variants.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [nohook, noui]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          export THEOS=$HOME/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
+          echo "$THEOS/bin" >> $GITHUB_PATH
+
+      - name: Install ldid
+        run: brew install ldid
+
+      - name: Build ${{ matrix.variant }}
+        run: |
+          make clean
+          if [ "${{ matrix.variant }}" = "nohook" ]; then
+            make package FINALPACKAGE=1 ADDITIONAL_CFLAGS=-DFF_NO_HOOK
+          else
+            make package FINALPACKAGE=1 ADDITIONAL_CFLAGS=-DFF_NO_UI
+          fi
+
+      - name: Upload dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: ff2018-${{ matrix.variant }}
+          path: .theos/obj/**/*.dylib

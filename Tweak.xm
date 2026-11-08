@@ -272,8 +272,14 @@ __attribute__((constructor))
 static void initMenu() {
     NSLog(@"[FF2018] dylib chargé. Base IL2CPP: 0x%llx", (unsigned long long)GetIl2CppBase());
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        // Variantes de diagnostic : -DFF_NO_HOOK / -DFF_NO_UI. Sans ces defines
+        // le comportement est identique à l'original.
+#ifndef FF_NO_HOOK
         InstallLateUpdateHook();
+#endif
+#ifndef FF_NO_UI
         ShowFab();
         [MenuViewController show];
+#endif
     });
 }

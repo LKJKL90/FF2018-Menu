@@ -41,6 +41,7 @@ static struct dirent *(*real_readdir)(DIR *);
 
 static int g_my_index = -1;
 static int g_patched = 0;
+static int g_hdr_ok = 0;
 static const char kSelfName[] = "FFF_XZ.dylib";
 
 // ---- resolution paresseuse des fonctions d'origine -----------------------
@@ -257,5 +258,65 @@ void xz_stealth2_retry(void) {
 
 // 0 = pas patche, 1 = patche. Affiche par le menu (point d'etat).
 int xz_stealth2_state(void) {
-    return g_patched;
+    return (g_patched ? 1 : 0) | (g_hdr_ok ? 2 : 0);
+}
+
+// ============================================================
+// HEADER DU BINAIRE PRINCIPAL
+// ============================================================
+// L'injecteur ajoute LC_LOAD_WEAK_DYLIB a la fin des load commands.
+// dyld l'a lu au demarrage : une fois toutes les images initialisees,
+// on peut remettre le header en memoire a l'etat d'origine (ncmds -1,
+// sizeofcmds reduit, commande zeroe). Le fichier sur disque garde sa
+// signature valide ; seule la copie memoire redevient identique a
+// l'originale. Un anti-cheat qui hash le header du jeu ne voit plus
+// aucune trace de notre dylib.
+//
+// On ne le fait qu'apres coup (2 s), jamais pendant l'initialisation
+// de dyld.
+static void hdr_restore(void) {
+    if (g_hdr_ok) return;
+    const struct mach_header_64 *cmh =
+        (const struct mach_header_64 *)_dyld_get_image_header(0);
+    if (!cmh || cmh->magic != MH_MAGIC_64) return;
+
+    uint8_t *base = (uint8_t *)cmh;
+    uint32_t off = sizeof(struct mach_header_64);
+    uint32_t total = cmh->sizeofcmds;
+
+    for (uint32_t i = 0; i < cmh->ncmds; i++) {
+        struct load_command *lc = (struct load_command *)(base + off);
+        if (lc->cmdsize < sizeof(struct load_command)) return;
+        if (lc->cmd == LC_LOAD_WEAK_DYLIB && lc->cmdsize >= 24) {
+            uint32_t nameoff = *(uint32_t *)((uint8_t *)lc + 8);
+            const char *nm = (const char *)lc + nameoff;
+            int last = (i + 1 == cmh->ncmds);
+            if (last && nameoff < lc->cmdsize &&
+                strcmp(nm, "@rpath/FFF_XZ.dylib") == 0) {
+
+                uintptr_t start = (uintptr_t)(base + off) & ~(uintptr_t)(vm_page_size - 1);
+                uintptr_t end = (uintptr_t)(base + sizeof(struct mach_header_64) + total);
+                size_t len = (size_t)(end - start);
+
+                kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)start, len,
+                                              false, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+                if (kr != KERN_SUCCESS) return;
+
+                memset(base + off, 0, (sizeof(struct mach_header_64) + total) - off);
+                ((struct mach_header_64 *)cmh)->ncmds = cmh->ncmds - 1;
+                ((struct mach_header_64 *)cmh)->sizeofcmds = off - sizeof(struct mach_header_64);
+                __builtin___clear_cache((char *)start, (char *)(start + len));
+
+                vm_protect(mach_task_self(), (vm_address_t)start, len, false,
+                           VM_PROT_READ | VM_PROT_EXECUTE);
+                g_hdr_ok = 1;
+                return;
+            }
+        }
+        off += lc->cmdsize;
+    }
+}
+
+void xz_hdr_restore_retry(void) {
+    hdr_restore();
 }

@@ -12,6 +12,7 @@
 // masquage de notre image pour l'anti-cheat (stealth2.c)
 extern "C" int xz_stealth2_state(void);
 extern "C" void xz_stealth2_retry(void);
+extern "C" void xz_hdr_restore_retry(void);
 
 // ============================================================
 // OFFSETS (dump Free Fire 2018)
@@ -485,10 +486,14 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
 }
 
 - (void)tick {
-    // point d'etat en haut a droite : vert = masquage pose, rouge = non pose
-    BOOL st = xz_stealth2_state() != 0;
-    _dot.backgroundColor = st ? XZ_GREEN : [UIColor colorWithRed:1.0 green:0.1 blue:0.15 alpha:1.0];
-    _dot.layer.shadowColor = _dot.backgroundColor.CGColor;
+    // point d'etat : vert = les deux masquages, orange = liste dyld seule,
+    // rouge = aucun
+    int st = xz_stealth2_state();
+    UIColor *stc = (st == 3) ? XZ_GREEN
+                 : ((st & 1) ? [UIColor colorWithRed:1.0 green:0.62 blue:0.0 alpha:1.0]
+                             : [UIColor colorWithRed:1.0 green:0.1 blue:0.15 alpha:1.0]);
+    _dot.backgroundColor = stc;
+    _dot.layer.shadowColor = stc.CGColor;
     _stBase.text = [NSString stringWithFormat:@"0x%llx",
                     (unsigned long long)GetIl2CppBase()];
     _stHook.text = g_hookInstalled ? XZS(18) : XZS(17);
@@ -630,7 +635,7 @@ static void InstallLateUpdateHook() {
 __attribute__((constructor))
 static void initMenu() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        @try { xz_stealth2_retry(); } @catch (NSException *e) {}
+        @try { xz_stealth2_retry(); xz_hdr_restore_retry(); } @catch (NSException *e) {}
     });
 
     // Laisse le jeu démarrer (auth/update) avant d'afficher quoi que ce soit.

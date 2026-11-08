@@ -14,8 +14,8 @@ import sys
 import zipfile
 
 LC_LOAD_DYLIB = 0xC
+LC_LOAD_WEAK_DYLIB = 0x80000018
 MAXCMDSZ = 0x10000
-INSTALL_NAME = "@rpath/FF2018Menu.dylib"
 
 
 def find_binary(entries):
@@ -27,7 +27,7 @@ def find_binary(entries):
     raise SystemExit("binaire principal introuvable dans Payload/*.app/")
 
 
-def patch_macho(data, dylib_install_name):
+def patch_macho(data, dylib_install_name, weak_system=False):
     magic = struct.unpack_from("<I", data, 0)[0]
     if magic != 0xFEEDFACF:
         raise SystemExit(f"magic inattendu 0x{magic:x} (thin arm64 attendu)")
@@ -38,6 +38,12 @@ def patch_macho(data, dylib_install_name):
     first_section = None
     for _ in range(ncmds):
         cmd, cmdsize = struct.unpack_from("<II", data, p)
+        if cmd == LC_LOAD_DYLIB and weak_system:
+            name_off = struct.unpack_from("<I", data, p + 8)[0]
+            lib = data[p + name_off:p + cmdsize].split(b"\0")[0].decode()
+            if lib.startswith("/System/") or lib.startswith("/usr/lib/"):
+                struct.pack_into("<I", data, p, LC_LOAD_WEAK_DYLIB)
+                print(f"  weak: {lib}")
         if cmd == 0x19:  # LC_SEGMENT_64
             segname = data[p + 8:p + 24].split(b"\0")[0].decode()
             fileoff = struct.unpack_from("<Q", data, p + 40)[0]
@@ -74,6 +80,7 @@ def main():
     if len(sys.argv) < 4:
         raise SystemExit(__doc__)
     src, dylib_path, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+    weak_system = "--weak" in sys.argv[4:]
 
     with zipfile.ZipFile(src) as z:
         names = z.namelist()
@@ -83,6 +90,11 @@ def main():
     print(f"binaire: {bin_name}")
     print(f"sortie : {dst}")
 
+    dylib_name = os.path.basename(dylib_path)
+    if not dylib_name.endswith(".dylib"):
+        raise SystemExit(f"le dylib doit finir par .dylib: {dylib_name}")
+    install_name = f"@rpath/{dylib_name}"
+
     with open(dylib_path, "rb") as d:
         dylib_bytes = d.read()
 
@@ -91,11 +103,11 @@ def main():
         for item in zin.infolist():
             payload = zin.read(item.filename)
             if item.filename == bin_name:
-                payload = patch_macho(bytearray(payload), INSTALL_NAME)
+                payload = patch_macho(bytearray(payload), install_name, weak_system)
                 payload = bytes(payload)
             zout.writestr(item.filename, payload)
 
-        target = f"{app_dir}/Frameworks/FF2018Menu.dylib"
+        target = f"{app_dir}/Frameworks/{dylib_name}"
         zout.writestr(target, dylib_bytes)
         print(f"  ajouté: {target} ({len(dylib_bytes)} octets)")
 

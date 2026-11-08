@@ -11,11 +11,27 @@ devient invalide : l'IPA doit être re-signé avant installation (iLoader/zsign)
 import os
 import struct
 import sys
+import time
 import zipfile
 
 LC_LOAD_DYLIB = 0xC
 LC_LOAD_WEAK_DYLIB = 0x80000018
 MAXCMDSZ = 0x10000
+
+
+def clone_info(src_info):
+    """Copie d'une entrée zip en gardant mode/permissions et compression.
+
+    zipfile.writestr(nom, data) avec une chaîne crée une entrée en 0600 :
+    le binaire principal perd son bit exécutable et l'app ne démarre plus.
+    """
+    zi = zipfile.ZipInfo(src_info.filename, date_time=src_info.date_time)
+    zi.compress_type = src_info.compress_type
+    zi.external_attr = src_info.external_attr
+    zi.internal_attr = src_info.internal_attr
+    zi.create_system = src_info.create_system
+    zi.comment = src_info.comment
+    return zi
 
 
 def find_binary(entries):
@@ -27,7 +43,8 @@ def find_binary(entries):
     raise SystemExit("binaire principal introuvable dans Payload/*.app/")
 
 
-def patch_macho(data, dylib_install_name, weak_system=False):
+def patch_macho(data, dylib_install_name, weak_system=False, replace_weak=None,
+                weak_module=False):
     magic = struct.unpack_from("<I", data, 0)[0]
     if magic != 0xFEEDFACF:
         raise SystemExit(f"magic inattendu 0x{magic:x} (thin arm64 attendu)")
@@ -36,6 +53,7 @@ def patch_macho(data, dylib_install_name, weak_system=False):
     p = 32
     cmds_end = 32 + sizeofcmds
     first_section = None
+    replaced = False
     for _ in range(ncmds):
         cmd, cmdsize = struct.unpack_from("<II", data, p)
         if cmd == LC_LOAD_DYLIB and weak_system:
@@ -44,6 +62,21 @@ def patch_macho(data, dylib_install_name, weak_system=False):
             if lib.startswith("/System/") or lib.startswith("/usr/lib/"):
                 struct.pack_into("<I", data, p, LC_LOAD_WEAK_DYLIB)
                 print(f"  weak: {lib}")
+        if cmd == LC_LOAD_DYLIB and replace_weak and not replaced:
+            name_off = struct.unpack_from("<I", data, p + 8)[0]
+            lib = data[p + name_off:p + cmdsize].split(b"\0")[0].decode()
+            if replace_weak in lib:
+                name = dylib_install_name.encode() + b"\0"
+                if 24 + len(name) > cmdsize:
+                    raise SystemExit(
+                        f"chemin trop long pour remplacer {lib} "
+                        f"({24 + len(name)} > {cmdsize})")
+                blob = struct.pack("<IIII", LC_LOAD_DYLIB, cmdsize, 24, 0) + name
+                blob += b"\0" * (cmdsize - len(blob))
+                data[p:p + cmdsize] = blob
+                print(f"  remplacé: {lib} -> {dylib_install_name} "
+                      f"(cmdsize {cmdsize} conservé)")
+                replaced = True
         if cmd == 0x19:  # LC_SEGMENT_64
             segname = data[p + 8:p + 24].split(b"\0")[0].decode()
             fileoff = struct.unpack_from("<Q", data, p + 40)[0]
@@ -56,6 +89,12 @@ def patch_macho(data, dylib_install_name, weak_system=False):
                         first_section = s_off
         p += cmdsize
 
+    if replace_weak:
+        if not replaced:
+            raise SystemExit(f"aucun LC_LOAD_DYLIB contenant {replace_weak!r}")
+        print(f"  ncmds={ncmds} sizeofcmds={sizeofcmds} (inchangés)")
+        return data
+
     name = dylib_install_name.encode() + b"\0"
     cmdsize = (24 + len(name) + 7) & ~7
     slack = first_section - cmds_end
@@ -66,13 +105,15 @@ def patch_macho(data, dylib_install_name, weak_system=False):
     if data[cmds_end:cmds_end + slack].strip(b"\0"):
         raise SystemExit("le padding du header n'est pas vide - abandon")
 
-    cmd = struct.pack("<IIIIII", LC_LOAD_DYLIB, cmdsize, 24, 0, 0x10000, 0x10000)
+    lc = LC_LOAD_WEAK_DYLIB if weak_module else LC_LOAD_DYLIB
+    cmd = struct.pack("<IIIIII", lc, cmdsize, 24, 0, 0x10000, 0x10000)
     blob = cmd + name
     blob += b"\0" * (cmdsize - len(blob))
     data[cmds_end:cmds_end + cmdsize] = blob
 
     struct.pack_into("<II", data, 16, ncmds + 1, sizeofcmds + cmdsize)
-    print(f"  LC_LOAD_DYLIB ajouté: {dylib_install_name} (cmdsize {cmdsize})")
+    kind = "LC_LOAD_WEAK_DYLIB" if weak_module else "LC_LOAD_DYLIB"
+    print(f"  {kind} ajouté: {dylib_install_name} (cmdsize {cmdsize})")
     return data
 
 
@@ -81,6 +122,13 @@ def main():
         raise SystemExit(__doc__)
     src, dylib_path, dst = sys.argv[1], sys.argv[2], sys.argv[3]
     weak_system = "--weak" in sys.argv[4:]
+    weak_module = "--weak-mod" in sys.argv[4:]
+    replace_weak = None
+    if "--replace-weak" in sys.argv[4:]:
+        i = sys.argv[4:].index("--replace-weak")
+        if i + 1 >= len(sys.argv[4:]):
+            raise SystemExit("--replace-weak attend un nom de framework")
+        replace_weak = sys.argv[4:][i + 1]
 
     with zipfile.ZipFile(src) as z:
         names = z.namelist()
@@ -103,13 +151,22 @@ def main():
         for item in zin.infolist():
             payload = zin.read(item.filename)
             if item.filename == bin_name:
-                payload = patch_macho(bytearray(payload), install_name, weak_system)
+                payload = patch_macho(bytearray(payload), install_name, weak_system,
+                                      replace_weak, weak_module)
                 payload = bytes(payload)
-            zout.writestr(item.filename, payload)
+            # On réécrit l'entrée en CONSERVANT ses métadonnées d'origine :
+            # un writestr(nom, data) nu repart en mode 0600, ce qui rend le
+            # binaire principal non exécutable -> iOS refuse de lancer l'app
+            # ("crash avant lancement").
+            zout.writestr(clone_info(item), payload)
 
         target = f"{app_dir}/Frameworks/{dylib_name}"
-        zout.writestr(target, dylib_bytes)
-        print(f"  ajouté: {target} ({len(dylib_bytes)} octets)")
+        zi = zipfile.ZipInfo(target, date_time=time.localtime()[:6])
+        zi.compress_type = zipfile.ZIP_DEFLATED
+        zi.create_system = 3
+        zi.external_attr = 0o100755 << 16          # exécutable
+        zout.writestr(zi, dylib_bytes)
+        print(f"  ajouté: {target} ({len(dylib_bytes)} octets, mode 0755)")
 
     print(f"ok: {dst} ({os.path.getsize(dst)} octets)")
 

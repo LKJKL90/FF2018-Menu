@@ -36,6 +36,7 @@ static BOOL g_flyEnabled = NO;
 static BOOL g_testMode = NO;
 
 static UIWindow *g_menuWindow = nil;
+static UIViewController *g_hostVC = nil;
 static UIViewController *g_menuVC = nil;
 
 #define MAX_PLAYERS 64

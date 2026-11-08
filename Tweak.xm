@@ -373,11 +373,11 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     title.attributedText = t;
     [bar addSubview:title];
 
-    UILabel *ver = [self lbl:XZS(1) frame:CGRectMake(118, 0, 44, 36)
-                       color:XZ_MUTED size:9 weight:UIFontWeightRegular];
+    UILabel *ver = [self lbl:XZS(1) frame:CGRectMake(132, 0, 46, 36)
+                       color:XZ_MUTED size:8 weight:UIFontWeightRegular];
     [bar addSubview:ver];
 
-    UIView *adot = [[UIView alloc] initWithFrame:CGRectMake(XZ_PANEL_W - 96, 15, 7, 7)];
+    UIView *adot = [[UIView alloc] initWithFrame:CGRectMake(XZ_PANEL_W - 78, 15, 7, 7)];
     adot.backgroundColor = XZ_GREEN;
     adot.layer.cornerRadius = 3.5;
     adot.layer.shadowColor = XZ_GREEN.CGColor;
@@ -393,12 +393,19 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     [adot.layer addAnimation:blink forKey:@"blink"];
     [bar addSubview:adot];
 
-    UILabel *active = [self lbl:XZS(2) frame:CGRectMake(XZ_PANEL_W - 85, 0, 46, 36)
-                          color:XZ_GREEN size:9 weight:UIFontWeightBold];
-    [bar addSubview:active];
+    // reduit le panneau a la pastille : indispensable en jeu
+    UIButton *mini = [UIButton buttonWithType:UIButtonTypeCustom];
+    mini.frame = CGRectMake(XZ_PANEL_W - 58, 7, 22, 22);
+    mini.layer.borderWidth = 1.0;
+    mini.layer.borderColor = XZ_LINE.CGColor;
+    [mini setTitle:@"_" forState:UIControlStateNormal];
+    [mini setTitleColor:XZ_MUTED forState:UIControlStateNormal];
+    mini.titleLabel.font = XZMono(11, UIFontWeightBold);
+    [mini addTarget:self action:@selector(cx:) forControlEvents:UIControlEventTouchUpInside];
+    [bar addSubview:mini];
 
     UIButton *close = [UIButton buttonWithType:UIButtonTypeCustom];
-    close.frame = CGRectMake(XZ_PANEL_W - 36, 7, 22, 22);
+    close.frame = CGRectMake(XZ_PANEL_W - 32, 7, 22, 22);
     close.layer.borderWidth = 1.0;
     close.layer.borderColor = XZ_LINE.CGColor;
     [close setTitle:XZS(22) forState:UIControlStateNormal];
@@ -443,7 +450,7 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     UIView *footLine = [[UIView alloc] initWithFrame:CGRectMake(0, 0, XZ_PANEL_W, 0.5)];
     footLine.backgroundColor = XZ_LINE;
     [foot addSubview:footLine];
-    [foot addSubview:[self lbl:XZS(19) frame:CGRectMake(12, 0, 180, 22)
+    [foot addSubview:[self lbl:XZS(19) frame:CGRectMake(12, 0, 150, 22)
                           color:XZ_MUTED size:9 weight:UIFontWeightRegular]];
     UILabel *fr = [self lbl:XZS(20) frame:CGRectMake(XZ_PANEL_W - 72, 0, 60, 22)
                       color:XZ_MUTED size:9 weight:UIFontWeightRegular];
@@ -505,10 +512,13 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
         if (!g_menuVC.view.superview) [g_host addSubview:g_menuVC.view];
 
         CGRect b = g_host.bounds;
-        CGFloat h = b.size.height - 24;
-        if (h > 470) h = 470;
-        if (h < 240) h = 240;
-        g_menuVC.view.frame = CGRectMake(40, 12, XZ_PANEL_W, h);
+        CGFloat h = b.size.height - 32;
+        if (h > 330) h = 330;
+        if (h < 220) h = 220;
+        // coin haut-droit : laisse le joystick et les boutons de tir libres
+        CGFloat x = b.size.width - XZ_PANEL_W - 10;
+        if (x < 6) x = 6;
+        g_menuVC.view.frame = CGRectMake(x, 10, XZ_PANEL_W, h);
         g_menuVC.view.hidden = NO;
         [g_host bringSubviewToFront:g_menuVC.view];
         if (g_fab) [g_host bringSubviewToFront:g_fab];
@@ -518,6 +528,11 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
 
 + (void)hide {
     dispatch_async(dispatch_get_main_queue(), ^{ g_menuVC.view.hidden = YES; g_menuVisible = NO; });
+}
+
++ (void)toggle {
+    if (g_menuVisible) [PanelController hide];
+    else [PanelController show];
 }
 @end
 
@@ -549,7 +564,7 @@ static void ShowFab(void) {
         CGRect b = g_host.bounds;
 
         DragPill *fab = [DragPill buttonWithType:UIButtonTypeCustom];
-        fab.frame = CGRectMake(b.size.width - 140, b.size.height - 52, 116, 28);
+        fab.frame = CGRectMake(b.size.width - 128, b.size.height - 40, 108, 26);
         [fab setTitle:XZS(21) forState:UIControlStateNormal];
         [fab setTitleColor:XZ_GREEN forState:UIControlStateNormal];
         fab.titleLabel.font = XZMono(10, UIFontWeightBold);
@@ -557,7 +572,8 @@ static void ShowFab(void) {
         fab.layer.borderWidth = 1.0;
         fab.layer.borderColor = XZ_GREEN.CGColor;
         fab.layer.cornerRadius = 2.0;
-        [fab addTarget:[PanelController class] action:@selector(show) forControlEvents:UIControlEventTouchUpInside];
+        [fab addTarget:[PanelController class] action:@selector(toggle)
+     forControlEvents:UIControlEventTouchUpInside];
         [g_host addSubview:fab];
         g_fab = fab;
     });

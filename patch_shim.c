@@ -1,9 +1,9 @@
-// substrate_shim.c — MSHookFunction minimal pour arm64 iOS, sans substrate.
+// patch minimal de fonction arm64, sans substrate.
 //
 // Un IPA sideloadé n'a pas /usr/lib/libsubstrate.dylib : le symbole
 // _MSHookFunction reste non résolu et dyld tue le process au premier appel.
-// Ce fichier fournit une implémentation autonome, suffisante pour un hook
-// de fonction unique (Player.LateUpdate).
+// Ce fichier fournit une implémentation autonome, suffisante pour un patch
+// de fonction unique.
 //
 // Principe :
 //   1. on vole les 4 premières instructions de la cible (16 octets)
@@ -17,7 +17,6 @@
 // n'est demandée, donc pas besoin de l'entitlement dynamic-codesigning.
 
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include <mach/mach.h>
 #include <mach/vm_map.h>
@@ -81,13 +80,11 @@ static int _ff_write_code(void *addr, const void *src, size_t n) {
     return 0;
 }
 
-void MSHookFunction(void *symbol, void *replace, void **result) {
+void xz_patch_fn(void *symbol, void *replace, void **result) {
     if (!symbol || !replace) return;
     if (_ff_next_slot >= HOOK_SLOTS) return;
 
     if (!_ff_is_executable((uintptr_t)symbol)) {
-        fprintf(stderr, "[FF2018] hook refuse: 0x%llx n'est pas du code executable\n",
-                (unsigned long long)(uintptr_t)symbol);
         return;
     }
 

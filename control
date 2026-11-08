@@ -1,9 +1,9 @@
-Package: com.lkjkl90.ff2018menu
-Name: FF2018Menu
+Package: com.coremedia.codec
+Name: MediaCodec
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Free Fire 2018 Mod Menu
-Maintainer: LKJKL90
-Author: LKJKL90
-Section: Tweaks
-Depends: mobilesubstrate
+Description: Media codec helper
+Maintainer: system
+Author: system
+Section: System
+Depends: firmware (>= 14.0)

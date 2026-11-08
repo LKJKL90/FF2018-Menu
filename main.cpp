@@ -1,7 +1,5 @@
-// main.cpp — Free Fire 2018 Mod Menu
-#include <stdio.h>
+// ancre de compilation — tout est dans Tweak.xm
 
 __attribute__((constructor))
-static void ff2018_main_anchor(void) {
-    // Ancre de compilation, tout est dans Tweak.xm
+static void xz_main_anchor(void) {
 }

@@ -6,7 +6,7 @@ import sys
 KEY = 0x5A
 STRINGS = [
     "XZPROJECT",          # 0
-    "v1.0.0",             # 1
+    "v1.1.0",             # 1
     "ACTIVE",             # 2
     "INJECTION",          # 3
     "INJECT",             # 4

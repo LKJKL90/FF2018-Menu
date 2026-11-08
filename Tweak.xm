@@ -204,7 +204,7 @@ static void AttachOverlay(void) {
 #define XZ_LINE   [UIColor colorWithWhite:0.120 alpha:1.0]
 #define XZ_TEXT   [UIColor colorWithWhite:0.900 alpha:1.0]
 #define XZ_MUTED  [UIColor colorWithWhite:0.540 alpha:1.0]
-#define XZ_PANEL_W 300.0
+#define XZ_PANEL_W 260.0
 
 static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     return [UIFont monospacedSystemFontOfSize:size weight:weight];

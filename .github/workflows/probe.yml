@@ -1,0 +1,37 @@
+name: Build probe dylib
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'probe/**'
+      - '.github/workflows/probe.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ldid
+        run: brew install ldid
+
+      - name: Build FFProbe.dylib
+        run: |
+          xcrun --sdk iphoneos clang \
+            -arch arm64 \
+            -miphoneos-version-min=14.0 \
+            -dynamiclib \
+            -fobjc-arc \
+            -framework Foundation \
+            probe/probe.m \
+            -o FFProbe.dylib
+          ldid -S FFProbe.dylib || true
+          file FFProbe.dylib
+          otool -l FFProbe.dylib | grep -A4 LC_CODE_SIGNATURE
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffprobe-dylib
+          path: FFProbe.dylib

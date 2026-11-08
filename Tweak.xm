@@ -79,8 +79,11 @@ static void WriteFloat(uintptr_t addr, float val) {
 // ============================================================
 static uintptr_t GetIl2CppBase() {
     if (g_il2cppBase) return g_il2cppBase;
-    Dl_info info;
-    if (dladdr((void*)&GetIl2CppBase, &info)) g_il2cppBase = (uintptr_t)info.dli_fbase;
+    // Le code il2cpp est linké dans l'exécutable principal. dladdr() sur une
+    // fonction de ce fichier renverrait la base de notre propre dylib, donc on
+    // prend directement l'image 0 (le binaire du jeu).
+    const struct mach_header_64 *hdr = (const struct mach_header_64 *)_dyld_get_image_header(0);
+    if (hdr) g_il2cppBase = (uintptr_t)hdr;
     return g_il2cppBase;
 }
 

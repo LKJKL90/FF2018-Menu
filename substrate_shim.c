@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#import <Foundation/Foundation.h>
 #include <mach/mach.h>
 #include <mach/vm_map.h>
 #include <mach/vm_prot.h>
@@ -35,6 +36,25 @@ static void _ff_hook_slots(void) {
 }
 
 static int _ff_next_slot = 0;
+
+// Vérifie qu'une adresse appartient bien à une région mappée et exécutable.
+// Sans ce garde-fou, un RVA faux fait écrire 16 octets dans une région qui
+// n'est pas du code (ou pas la bonne), et l'app meurt au premier appel.
+static int _ff_is_executable(uintptr_t addr) {
+    vm_address_t region = (vm_address_t)addr;
+    vm_size_t size = 0;
+    vm_region_basic_info_data_64_t info;
+    mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
+    mach_port_t object = MACH_PORT_NULL;
+
+    kern_return_t kr = vm_region_64(mach_task_self(), &region, &size,
+                                    VM_REGION_BASIC_INFO_64,
+                                    (vm_region_info_t)&info, &count, &object);
+    if (object != MACH_PORT_NULL) mach_port_deallocate(mach_task_self(), object);
+    if (kr != KERN_SUCCESS) return 0;
+    if (addr < (uintptr_t)region || addr + 16 > (uintptr_t)region + size) return 0;
+    return (info.protection & VM_PROT_EXECUTE) ? 1 : 0;
+}
 
 // Rend [addr, addr+n) accessible en écriture, écrit, puis remet en R-X.
 // Gère le cas où la zone chevauche deux pages.
@@ -64,6 +84,12 @@ static int _ff_write_code(void *addr, const void *src, size_t n) {
 void MSHookFunction(void *symbol, void *replace, void **result) {
     if (!symbol || !replace) return;
     if (_ff_next_slot >= HOOK_SLOTS) return;
+
+    if (!_ff_is_executable((uintptr_t)symbol)) {
+        NSLog(@"[FF2018] hook refuse: 0x%llx n'est pas du code executable",
+              (unsigned long long)(uintptr_t)symbol);
+        return;
+    }
 
     uintptr_t slot = (uintptr_t)_ff_hook_slots + (uintptr_t)(_ff_next_slot * SLOT_BYTES);
     _ff_next_slot++;

@@ -15,6 +15,7 @@ import zipfile
 
 LC_LOAD_DYLIB = 0xC
 MAXCMDSZ = 0x10000
+INSTALL_NAME = "@rpath/FF2018Menu.dylib"
 
 
 def find_binary(entries):
@@ -90,11 +91,11 @@ def main():
         for item in zin.infolist():
             payload = zin.read(item.filename)
             if item.filename == bin_name:
-                payload = patch_macho(bytearray(payload), "@executable_path/FF2018Menu.dylib")
+                payload = patch_macho(bytearray(payload), INSTALL_NAME)
                 payload = bytes(payload)
             zout.writestr(item.filename, payload)
 
-        target = f"{app_dir}/FF2018Menu.dylib"
+        target = f"{app_dir}/Frameworks/FF2018Menu.dylib"
         zout.writestr(target, dylib_bytes)
         print(f"  ajouté: {target} ({len(dylib_bytes)} octets)")
 

@@ -34,6 +34,7 @@ static BOOL g_espEnabled = NO;
 static BOOL g_aimbotEnabled = NO;
 static BOOL g_flyEnabled = NO;
 static BOOL g_testMode = NO;
+static BOOL g_hookInstalled = NO;
 
 static UIWindow *g_menuWindow = nil;
 static UIViewController *g_hostVC = nil;
@@ -157,55 +158,283 @@ static void CachePlayer(uintptr_t player) {
 - (BOOL)prefersStatusBarHidden { return YES; }
 @end
 
+// Palette du menu terminal (reprise du preview XZPROJECT / momoZbadou)
+#define FF_GREEN  [UIColor colorWithRed:0.00 green:1.00 blue:0.40 alpha:1.0]
+#define FF_BAR    [UIColor colorWithWhite:0.031 alpha:1.0]
+#define FF_PANEL  [UIColor colorWithWhite:0.039 alpha:1.0]
+#define FF_LINE   [UIColor colorWithWhite:0.120 alpha:1.0]
+#define FF_TEXT   [UIColor colorWithWhite:0.900 alpha:1.0]
+#define FF_MUTED  [UIColor colorWithWhite:0.540 alpha:1.0]
+#define FF_PANEL_W 300.0
+
+static UIFont *FFMono(CGFloat size, UIFontWeight weight) {
+    return [UIFont monospacedSystemFontOfSize:size weight:weight];
+}
+
+// Interrupteur carre, 32x16, pouce 10x10 qui glisse de 17 px.
+@interface FFSwitch : UIControl
+@property (nonatomic, assign) BOOL on;
+@end
+
+@implementation FFSwitch {
+    UIView *_thumb;
+}
+- (instancetype)init {
+    self = [super initWithFrame:CGRectMake(0, 0, 32, 16)];
+    if (!self) return nil;
+    self.layer.borderWidth = 1.0;
+    self.layer.cornerRadius = 2.0;
+    _thumb = [[UIView alloc] initWithFrame:CGRectMake(2, 2, 10, 10)];
+    _thumb.layer.cornerRadius = 1.0;
+    [self addSubview:_thumb];
+    [self addTarget:self action:@selector(ff_tap) forControlEvents:UIControlEventTouchUpInside];
+    [self ff_refresh];
+    return self;
+}
+- (void)ff_tap {
+    self.on = !self.on;
+    [self sendActionsForControlEvents:UIControlEventValueChanged];
+}
+- (void)setOn:(BOOL)on {
+    _on = on;
+    [self ff_refresh];
+}
+- (void)ff_refresh {
+    if (_on) {
+        self.backgroundColor = [FF_GREEN colorWithAlphaComponent:0.15];
+        self.layer.borderColor = FF_GREEN.CGColor;
+        _thumb.backgroundColor = FF_GREEN;
+        _thumb.layer.shadowColor = FF_GREEN.CGColor;
+        _thumb.layer.shadowOpacity = 1.0;
+        _thumb.layer.shadowRadius = 3.0;
+        _thumb.layer.shadowOffset = CGSizeZero;
+        _thumb.frame = CGRectMake(19, 2, 10, 10);
+    } else {
+        self.backgroundColor = [UIColor colorWithWhite:0.10 alpha:1.0];
+        self.layer.borderColor = FF_LINE.CGColor;
+        _thumb.backgroundColor = [UIColor colorWithWhite:0.33 alpha:1.0];
+        _thumb.layer.shadowOpacity = 0.0;
+        _thumb.frame = CGRectMake(2, 2, 10, 10);
+    }
+}
+@end
+
 @interface MenuViewController : UIViewController @end
-@implementation MenuViewController
+@implementation MenuViewController {
+    UIScrollView *_scroll;
+    UILabel *_stBase;
+    UILabel *_stHook;
+    UILabel *_stPlayers;
+    UILabel *_stEsp;
+    CGFloat  _contentY;
+}
+
+- (UILabel *)ff_label:(NSString *)text frame:(CGRect)f color:(UIColor *)c
+                 size:(CGFloat)s weight:(UIFontWeight)w {
+    UILabel *l = [[UILabel alloc] initWithFrame:f];
+    l.text = text;
+    l.textColor = c;
+    l.font = FFMono(s, w);
+    l.backgroundColor = [UIColor clearColor];
+    return l;
+}
+
+- (void)ff_section:(NSString *)title {
+    UIView *sec = [[UIView alloc] initWithFrame:CGRectMake(0, _contentY, FF_PANEL_W, 26)];
+    UIView *top = [[UIView alloc] initWithFrame:CGRectMake(0, 0, FF_PANEL_W, 0.5)];
+    top.backgroundColor = FF_LINE;
+    [sec addSubview:top];
+
+    NSMutableAttributedString *as = [[NSMutableAttributedString alloc] initWithString:title];
+    [as addAttribute:NSKernAttributeName value:@1.6
+               range:NSMakeRange(0, title.length)];
+    UILabel *l = [self ff_label:nil frame:CGRectMake(12, 7, FF_PANEL_W - 24, 16)
+                          color:FF_GREEN size:10 weight:UIFontWeightBold];
+    l.attributedText = as;
+    [sec addSubview:l];
+
+    [_scroll addSubview:sec];
+    _contentY += 26.0;
+}
+
+- (FFSwitch *)ff_row:(NSString *)title action:(SEL)action on:(BOOL)on {
+    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, _contentY, FF_PANEL_W, 30)];
+    UILabel *l = [self ff_label:title frame:CGRectMake(12, 0, FF_PANEL_W - 60, 30)
+                          color:FF_TEXT size:11 weight:UIFontWeightRegular];
+    [row addSubview:l];
+
+    FFSwitch *sw = [[FFSwitch alloc] init];
+    sw.frame = CGRectMake(FF_PANEL_W - 44, 7, 32, 16);
+    sw.on = on;
+    [sw addTarget:self action:action forControlEvents:UIControlEventValueChanged];
+    [row addSubview:sw];
+
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 29.5, FF_PANEL_W, 0.5)];
+    line.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.04];
+    [row addSubview:line];
+
+    [_scroll addSubview:row];
+    _contentY += 30.0;
+    return sw;
+}
+
+- (UILabel *)ff_status:(NSString *)key value:(NSString *)value dotOn:(BOOL)dotOn {
+    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, _contentY, FF_PANEL_W, 22)];
+
+    UIView *dot = [[UIView alloc] initWithFrame:CGRectMake(12, 8, 6, 6)];
+    dot.backgroundColor = dotOn ? FF_GREEN : [UIColor colorWithWhite:0.20 alpha:1.0];
+    dot.layer.cornerRadius = 3.0;
+    if (dotOn) {
+        dot.layer.shadowColor = FF_GREEN.CGColor;
+        dot.layer.shadowOpacity = 1.0;
+        dot.layer.shadowRadius = 3.0;
+        dot.layer.shadowOffset = CGSizeZero;
+    }
+    [row addSubview:dot];
+
+    UILabel *k = [self ff_label:key frame:CGRectMake(26, 0, 86, 22)
+                          color:FF_MUTED size:9 weight:UIFontWeightRegular];
+    [row addSubview:k];
+
+    UILabel *v = [self ff_label:value frame:CGRectMake(112, 0, FF_PANEL_W - 124, 22)
+                          color:FF_TEXT size:9 weight:UIFontWeightRegular];
+    v.textAlignment = NSTextAlignmentRight;
+    [row addSubview:v];
+
+    [_scroll addSubview:row];
+    _contentY += 22.0;
+    return v;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
-    self.view.layer.cornerRadius = 12;
-    self.view.layer.masksToBounds = YES;
+    self.view.backgroundColor = FF_PANEL;
+    self.view.layer.borderWidth = 1.0;
+    self.view.layer.borderColor = FF_GREEN.CGColor;
+    self.view.layer.cornerRadius = 2.0;
 
-    CGFloat y = 10;
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(10, y, 220, 24)];
-    title.text = @"FF 2018 Menu"; title.textColor = [UIColor whiteColor];
-    title.font = [UIFont boldSystemFontOfSize:16];
-    [self.view addSubview:title]; y += 34;
+    // ---- barre de titre ----
+    UIView *bar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, FF_PANEL_W, 36)];
+    bar.backgroundColor = FF_BAR;
+    UIView *barLine = [[UIView alloc] initWithFrame:CGRectMake(0, 35.5, FF_PANEL_W, 0.5)];
+    barLine.backgroundColor = FF_LINE;
+    [bar addSubview:barLine];
 
-    UISwitch *esp = [[UISwitch alloc] initWithFrame:CGRectMake(10, y, 50, 30)];
-    esp.on = g_espEnabled; [esp addTarget:self action:@selector(toggleESP:) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:esp];
-    UILabel *l1 = [[UILabel alloc] initWithFrame:CGRectMake(70, y, 150, 30)]; l1.text = @"ESP"; l1.textColor = [UIColor whiteColor];
-    [self.view addSubview:l1]; y += 40;
+    NSMutableAttributedString *t = [[NSMutableAttributedString alloc] initWithString:@"XZPROJECT"];
+    [t addAttribute:NSKernAttributeName value:@2.0 range:NSMakeRange(0, 9)];
+    UILabel *title = [self ff_label:nil frame:CGRectMake(12, 0, 130, 36)
+                             color:FF_GREEN size:13 weight:UIFontWeightBold];
+    title.attributedText = t;
+    [bar addSubview:title];
 
-    UISwitch *aim = [[UISwitch alloc] initWithFrame:CGRectMake(10, y, 50, 30)];
-    aim.on = g_aimbotEnabled; [aim addTarget:self action:@selector(toggleAimbot:) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:aim];
-    UILabel *l2 = [[UILabel alloc] initWithFrame:CGRectMake(70, y, 150, 30)]; l2.text = @"Aimbot"; l2.textColor = [UIColor whiteColor];
-    [self.view addSubview:l2]; y += 40;
+    UILabel *ver = [self ff_label:@"v1.0.0" frame:CGRectMake(118, 0, 44, 36)
+                           color:FF_MUTED size:9 weight:UIFontWeightRegular];
+    [bar addSubview:ver];
 
-    UISwitch *fly = [[UISwitch alloc] initWithFrame:CGRectMake(10, y, 50, 30)];
-    fly.on = g_flyEnabled; [fly addTarget:self action:@selector(toggleFly:) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:fly];
-    UILabel *l3 = [[UILabel alloc] initWithFrame:CGRectMake(70, y, 150, 30)]; l3.text = @"Fly"; l3.textColor = [UIColor whiteColor];
-    [self.view addSubview:l3]; y += 40;
+    UIView *adot = [[UIView alloc] initWithFrame:CGRectMake(FF_PANEL_W - 96, 15, 7, 7)];
+    adot.backgroundColor = FF_GREEN;
+    adot.layer.cornerRadius = 3.5;
+    adot.layer.shadowColor = FF_GREEN.CGColor;
+    adot.layer.shadowOpacity = 1.0;
+    adot.layer.shadowRadius = 3.0;
+    adot.layer.shadowOffset = CGSizeZero;
+    CABasicAnimation *blink = [CABasicAnimation animationWithKeyPath:@"opacity"];
+    blink.fromValue = @1.0;
+    blink.toValue = @0.25;
+    blink.duration = 0.7;
+    blink.autoreverses = YES;
+    blink.repeatCount = 1e9f;
+    [adot.layer addAnimation:blink forKey:@"blink"];
+    [bar addSubview:adot];
 
-    UISwitch *test = [[UISwitch alloc] initWithFrame:CGRectMake(10, y, 50, 30)];
-    test.on = g_testMode; [test addTarget:self action:@selector(toggleTest:) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:test];
-    UILabel *l4 = [[UILabel alloc] initWithFrame:CGRectMake(70, y, 150, 30)]; l4.text = @"Test Health"; l4.textColor = [UIColor whiteColor];
-    [self.view addSubview:l4]; y += 50;
+    UILabel *active = [self ff_label:@"ACTIVE" frame:CGRectMake(FF_PANEL_W - 85, 0, 46, 36)
+                              color:FF_GREEN size:9 weight:UIFontWeightBold];
+    [bar addSubview:active];
 
-    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
-    close.frame = CGRectMake(10, y, 220, 34);
-    [close setTitle:@"Fermer" forState:UIControlStateNormal];
-    [close setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeCustom];
+    close.frame = CGRectMake(FF_PANEL_W - 36, 7, 22, 22);
+    close.layer.borderWidth = 1.0;
+    close.layer.borderColor = FF_LINE.CGColor;
+    [close setTitle:@"x" forState:UIControlStateNormal];
+    [close setTitleColor:FF_MUTED forState:UIControlStateNormal];
+    close.titleLabel.font = FFMono(13, UIFontWeightRegular);
     [close addTarget:self action:@selector(closeMenu:) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:close];
+    [bar addSubview:close];
+
+    [bar addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self
+                                                                    action:@selector(ff_drag:)]];
+    [self.view addSubview:bar];
+
+    // ---- contenu defilant ----
+    _scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 36, FF_PANEL_W, 1)];
+    _scroll.backgroundColor = [UIColor clearColor];
+    _scroll.indicatorStyle = UIScrollViewIndicatorStyleWhite;
+    _scroll.alwaysBounceVertical = YES;
+    [self.view addSubview:_scroll];
+
+    _contentY = 0;
+    [self ff_section:@"VISUALS"];
+    [self ff_row:@"ESP" action:@selector(toggleESP:) on:g_espEnabled];
+    [self ff_row:@"Test Health" action:@selector(toggleTest:) on:g_testMode];
+
+    [self ff_section:@"COMBAT"];
+    [self ff_row:@"Aimbot" action:@selector(toggleAimbot:) on:g_aimbotEnabled];
+
+    [self ff_section:@"MOVEMENT"];
+    [self ff_row:@"Fly" action:@selector(toggleFly:) on:g_flyEnabled];
+
+    [self ff_section:@"STATUS"];
+    _stBase    = [self ff_status:@"BASE"    value:@"0x0" dotOn:YES];
+    _stHook    = [self ff_status:@"HOOK"    value:@"OFF" dotOn:NO];
+    _stPlayers = [self ff_status:@"PLAYERS" value:@"0"   dotOn:NO];
+    _stEsp     = [self ff_status:@"ESP"     value:@"OFF" dotOn:NO];
+
+    UIView *foot = [[UIView alloc] initWithFrame:CGRectMake(0, _contentY, FF_PANEL_W, 22)];
+    UIView *footLine = [[UIView alloc] initWithFrame:CGRectMake(0, 0, FF_PANEL_W, 0.5)];
+    footLine.backgroundColor = FF_LINE;
+    [foot addSubview:footLine];
+    [foot addSubview:[self ff_label:@"XZPROJECT // ff2018" frame:CGRectMake(12, 0, 180, 22)
+                            color:FF_MUTED size:9 weight:UIFontWeightRegular]];
+    UILabel *fr = [self ff_label:@"iloader" frame:CGRectMake(FF_PANEL_W - 72, 0, 60, 22)
+                          color:FF_MUTED size:9 weight:UIFontWeightRegular];
+    fr.textAlignment = NSTextAlignmentRight;
+    [foot addSubview:fr];
+    [_scroll addSubview:foot];
+    _contentY += 22.0;
+
+    _scroll.contentSize = CGSizeMake(FF_PANEL_W, _contentY);
+
+    [NSTimer scheduledTimerWithTimeInterval:0.5 target:self
+                                   selector:@selector(ff_tick) userInfo:nil repeats:YES];
+    [self ff_tick];
 }
-- (void)toggleESP:(UISwitch*)s { g_espEnabled = s.isOn; }
-- (void)toggleAimbot:(UISwitch*)s { g_aimbotEnabled = s.isOn; }
-- (void)toggleFly:(UISwitch*)s { g_flyEnabled = s.isOn; }
-- (void)toggleTest:(UISwitch*)s { g_testMode = s.isOn; }
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    CGRect b = self.view.bounds;
+    _scroll.frame = CGRectMake(0, 36, b.size.width, b.size.height - 36);
+}
+
+- (void)ff_drag:(UIPanGestureRecognizer *)g {
+    CGPoint p = [g translationInView:self.view.superview];
+    self.view.center = CGPointMake(self.view.center.x + p.x, self.view.center.y + p.y);
+    [g setTranslation:CGPointZero inView:self.view.superview];
+}
+
+- (void)ff_tick {
+    _stBase.text = [NSString stringWithFormat:@"0x%llx",
+                    (unsigned long long)GetIl2CppBase()];
+    _stHook.text = g_hookInstalled ? @"READY" : @"OFF";
+    _stHook.textColor = g_hookInstalled ? FF_GREEN : FF_MUTED;
+    _stPlayers.text = [NSString stringWithFormat:@"%d", g_playerCount];
+    _stEsp.text = g_espEnabled ? @"ON" : @"OFF";
+    _stEsp.textColor = g_espEnabled ? FF_GREEN : FF_MUTED;
+}
+
+- (void)toggleESP:(FFSwitch*)s { g_espEnabled = s.on; }
+- (void)toggleAimbot:(FFSwitch*)s { g_aimbotEnabled = s.on; }
+- (void)toggleFly:(FFSwitch*)s { g_flyEnabled = s.on; }
+- (void)toggleTest:(FFSwitch*)s { g_testMode = s.on; }
 - (void)closeMenu:(UIButton*)b { [MenuViewController hide]; }
 + (UIWindow *)menuWindow {
     if (g_menuWindow) return g_menuWindow;
@@ -244,9 +473,10 @@ static void CachePlayer(uintptr_t player) {
         // Le panneau est une sous-vue, pas la vue racine : sinon UIKit la
         // redimensionne aux bornes de la fenetre et le menu couvre tout l'ecran.
         CGRect b = w.bounds;
-        CGFloat h = b.size.height - 32;
-        if (h > 340) h = 340;
-        g_menuVC.view.frame = CGRectMake(16, 16, 340, h);
+        CGFloat h = b.size.height - 24;
+        if (h > 470) h = 470;
+        if (h < 240) h = 240;
+        g_menuVC.view.frame = CGRectMake(40, 12, FF_PANEL_W, h);
         g_menuVC.view.hidden = NO;
         g_menuVisible = YES;
     });
@@ -280,11 +510,14 @@ static void ShowFab() {
         CGRect b = w.bounds;
 
         g_fab = [FloatingButton buttonWithType:UIButtonTypeCustom];
-        g_fab.frame = CGRectMake(b.size.width - 70, 20, 54, 54);
-        [g_fab setTitle:@"FF" forState:UIControlStateNormal];
-        [g_fab setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        g_fab.backgroundColor = [UIColor colorWithRed:0.8 green:0.2 blue:0.2 alpha:0.9];
-        g_fab.layer.cornerRadius = 27;
+        g_fab.frame = CGRectMake(b.size.width - 140, b.size.height - 52, 116, 28);
+        [g_fab setTitle:@"momoZbadou" forState:UIControlStateNormal];
+        [g_fab setTitleColor:FF_GREEN forState:UIControlStateNormal];
+        g_fab.titleLabel.font = FFMono(10, UIFontWeightBold);
+        g_fab.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
+        g_fab.layer.borderWidth = 1.0;
+        g_fab.layer.borderColor = FF_GREEN.CGColor;
+        g_fab.layer.cornerRadius = 2.0;
         [g_fab addTarget:[MenuViewController class] action:@selector(show) forControlEvents:UIControlEventTouchUpInside];
         [w addSubview:g_fab];
     });
@@ -304,7 +537,8 @@ static void InstallLateUpdateHook() {
     uintptr_t target = base + RVA_PLAYER_LATEUPDATE;
     NSLog(@"[FF2018] Hook LateUpdate @ 0x%llx", (unsigned long long)target);
     MSHookFunction((void*)target, (void*)hooked_PlayerLateUpdate, (void**)&orig_PlayerLateUpdate);
-    NSLog(@"[FF2018] Hook installé");
+    g_hookInstalled = (orig_PlayerLateUpdate != NULL);
+    NSLog(@"[FF2018] Hook installé (orig=%p)", (void *)orig_PlayerLateUpdate);
 }
 
 // ============================================================

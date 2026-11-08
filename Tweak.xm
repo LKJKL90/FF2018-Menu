@@ -40,9 +40,9 @@ static BOOL g_injected = NO;
 
 static void InstallLateUpdateHook(void);
 
-static UIWindow *g_menuWindow = nil;
-static UIViewController *g_hostVC = nil;
+static UIView *g_host = nil;            // calque transparent, enfant de la fenetre du jeu
 static UIViewController *g_menuVC = nil;
+static UIButton *g_fab = nil;
 
 #define MAX_PLAYERS 64
 static uintptr_t g_players[MAX_PLAYERS];
@@ -150,9 +150,9 @@ static void CachePlayer(uintptr_t player) {
 // ============================================================
 // HOST
 // ============================================================
-// Vue racine transparente : seule la zone du panneau capte les touches.
-// Sans ça la fenêtre overlay avale tous les taps du jeu (bouton
-// "actualiser" de l'écran de démarrage, etc.).
+// UIView.hitTest renvoie la vue elle-meme quand aucune sous-vue ne
+// repond, et cette valeur consomme le tap. On renvoie nil pour laisser
+// la fenetre continuer a tester ses sous-vues suivantes (la vue Unity).
 @interface HostView : UIView @end
 @implementation HostView
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
@@ -161,19 +161,42 @@ static void CachePlayer(uintptr_t player) {
 }
 @end
 
-@interface PanelHost : UIViewController @end
-@implementation PanelHost
-- (void)loadView {
-    HostView *v = [[HostView alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    v.backgroundColor = [UIColor clearColor];
-    self.view = v;
+// ============================================================
+// CALQUE DANS LA FENETRE DU JEU
+// ============================================================
+// Une UIWindow separee capte TOUS les taps, meme quand son hitTest
+// renvoie nil : iOS ne redescend pas vers les fenetres du dessous.
+// D'ou le bug "menu ouvert = jeu mort". En mettant le calque DANS la
+// fenetre du jeu, un hitTest nul laisse le window continuer a tester
+// ses autres sous-vues (la vue Unity) et le tap passe normalement.
+static UIWindow *GameWindow(void) {
+    UIApplication *app = [UIApplication sharedApplication];
+    UIWindow *key = app.keyWindow;
+    if (key && !key.hidden) return key;
+    for (UIWindow *w in app.windows) {
+        if (w.hidden || !w.rootViewController) continue;
+        return w;
+    }
+    return app.windows.firstObject;
 }
-- (BOOL)shouldAutorotate { return YES; }
-- (UIInterfaceOrientationMask)supportedInterfaceOrientations {
-    return UIInterfaceOrientationMaskLandscape;
+
+static void AttachOverlay(void) {
+    UIWindow *w = GameWindow();
+    if (!w) return;
+    if (!g_host) {
+        g_host = [[HostView alloc] initWithFrame:w.bounds];
+        g_host.backgroundColor = [UIColor clearColor];
+        g_host.opaque = NO;
+        g_host.userInteractionEnabled = YES;
+        g_host.autoresizingMask = UIViewAutoresizingFlexibleWidth |
+                                  UIViewAutoresizingFlexibleHeight;
+    }
+    if (g_host.superview != w) {
+        g_host.frame = w.bounds;
+        [w addSubview:g_host];
+    }
+    [w bringSubviewToFront:g_host];
 }
-- (BOOL)prefersStatusBarHidden { return YES; }
-@end
 
 #define XZ_GREEN  [UIColor colorWithRed:0.00 green:1.00 blue:0.40 alpha:1.0]
 #define XZ_BAR    [UIColor colorWithWhite:0.031 alpha:1.0]
@@ -474,46 +497,21 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
 
 - (void)cx:(UIButton*)b { [PanelController hide]; }
 
-+ (UIWindow *)menuWindow {
-    if (g_menuWindow) return g_menuWindow;
-
-    UIWindowScene *scene = nil;
-    for (UIScene *s in [UIApplication sharedApplication].connectedScenes) {
-        if ([s isKindOfClass:[UIWindowScene class]] &&
-            (s.activationState == UISceneActivationStateForegroundActive ||
-             s.activationState == UISceneActivationStateForegroundInactive)) {
-            scene = (UIWindowScene *)s;
-            break;
-        }
-    }
-
-    if (scene) {
-        g_menuWindow = [[UIWindow alloc] initWithWindowScene:scene];
-    } else {
-        g_menuWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    }
-    g_menuWindow.windowLevel = UIWindowLevelAlert + 100;
-    g_menuWindow.backgroundColor = [UIColor clearColor];
-
-    g_hostVC = [[PanelHost alloc] init];
-    g_hostVC.view.backgroundColor = [UIColor clearColor];
-    g_menuWindow.rootViewController = g_hostVC;
-    g_menuWindow.hidden = NO;
-    return g_menuWindow;
-}
-
 + (void)show {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *w = [PanelController menuWindow];
+        AttachOverlay();
+        if (!g_host) return;
         if (!g_menuVC) g_menuVC = [[PanelController alloc] init];
-        if (!g_menuVC.view.superview) [g_hostVC.view addSubview:g_menuVC.view];
+        if (!g_menuVC.view.superview) [g_host addSubview:g_menuVC.view];
 
-        CGRect b = w.bounds;
+        CGRect b = g_host.bounds;
         CGFloat h = b.size.height - 24;
         if (h > 470) h = 470;
         if (h < 240) h = 240;
         g_menuVC.view.frame = CGRectMake(40, 12, XZ_PANEL_W, h);
         g_menuVC.view.hidden = NO;
+        [g_host bringSubviewToFront:g_menuVC.view];
+        if (g_fab) [g_host bringSubviewToFront:g_fab];
         g_menuVisible = YES;
     });
 }
@@ -539,25 +537,41 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
 }
 @end
 
-static DragPill *g_fab = nil;
-static void ShowFab() {
+static void ShowFab(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (g_fab) return;
-        UIWindow *w = [PanelController menuWindow];
-        CGRect b = w.bounds;
+        AttachOverlay();
+        if (!g_host) return;
+        if (g_fab) {
+            if (g_fab.superview != g_host) [g_host addSubview:g_fab];
+            [g_host bringSubviewToFront:g_fab];
+            return;
+        }
+        CGRect b = g_host.bounds;
 
-        g_fab = [DragPill buttonWithType:UIButtonTypeCustom];
-        g_fab.frame = CGRectMake(b.size.width - 140, b.size.height - 52, 116, 28);
-        [g_fab setTitle:XZS(21) forState:UIControlStateNormal];
-        [g_fab setTitleColor:XZ_GREEN forState:UIControlStateNormal];
-        g_fab.titleLabel.font = XZMono(10, UIFontWeightBold);
-        g_fab.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
-        g_fab.layer.borderWidth = 1.0;
-        g_fab.layer.borderColor = XZ_GREEN.CGColor;
-        g_fab.layer.cornerRadius = 2.0;
-        [g_fab addTarget:[PanelController class] action:@selector(show) forControlEvents:UIControlEventTouchUpInside];
-        [w addSubview:g_fab];
+        DragPill *fab = [DragPill buttonWithType:UIButtonTypeCustom];
+        fab.frame = CGRectMake(b.size.width - 140, b.size.height - 52, 116, 28);
+        [fab setTitle:XZS(21) forState:UIControlStateNormal];
+        [fab setTitleColor:XZ_GREEN forState:UIControlStateNormal];
+        fab.titleLabel.font = XZMono(10, UIFontWeightBold);
+        fab.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
+        fab.layer.borderWidth = 1.0;
+        fab.layer.borderColor = XZ_GREEN.CGColor;
+        fab.layer.cornerRadius = 2.0;
+        [fab addTarget:[PanelController class] action:@selector(show) forControlEvents:UIControlEventTouchUpInside];
+        [g_host addSubview:fab];
+        g_fab = fab;
     });
+}
+
+// La fenetre du jeu peut etre recreee (ecran d'auth, chargement, retour
+// de partie) : on raccroche le calque et on le remet au premier plan.
+static void KeepOverlayAlive(void) {
+    if (!g_menuVC && !g_fab) return;
+    AttachOverlay();
+    if (!g_host) return;
+    if (g_menuVC && g_menuVC.view.superview == g_host && !g_menuVC.view.hidden)
+        [g_host bringSubviewToFront:g_menuVC.view];
+    if (g_fab && g_fab.superview == g_host) [g_host bringSubviewToFront:g_fab];
 }
 
 // ============================================================
@@ -582,14 +596,21 @@ static void InstallLateUpdateHook() {
 // ============================================================
 // INIT
 // ============================================================
+extern void xz_stealth_init(void);
+
 __attribute__((constructor))
 static void initMenu() {
+    // On se masque avant tout appel de l'anti-cheat.
+    @try { xz_stealth_init(); } @catch (NSException *e) {}
+
     // Laisse le jeu démarrer (auth/update) avant d'afficher quoi que ce soit.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
 #ifndef FF_NO_UI
         @try {
             ShowFab();
             [PanelController show];
+            [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
+                                              block:^(NSTimer *t) { KeepOverlayAlive(); }];
         } @catch (NSException *e) {
             // une exception UI ne doit jamais tuer le jeu
         }

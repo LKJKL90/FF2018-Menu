@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
+#include <mach/vm_map.h>
 #include <mach/vm_prot.h>
 #include <libkern/OSCacheControl.h>
 

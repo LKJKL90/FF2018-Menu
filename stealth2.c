@@ -254,3 +254,8 @@ static void xz_stealth2_init(void) {
 void xz_stealth2_retry(void) {
     if (!g_patched) xz_stealth2_init();
 }
+
+// 0 = pas patche, 1 = patche. Affiche par le menu (point d'etat).
+int xz_stealth2_state(void) {
+    return g_patched;
+}

@@ -9,6 +9,10 @@
 
 #import "xz_strings.h"
 
+// masquage de notre image pour l'anti-cheat (stealth2.c)
+extern "C" int xz_stealth2_state(void);
+extern "C" void xz_stealth2_retry(void);
+
 // ============================================================
 // OFFSETS (dump Free Fire 2018)
 // ============================================================
@@ -272,6 +276,7 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     UILabel *_stEsp;
     UILabel *_stInj;
     MiniToggle *_injSwitch;
+    UIView *_dot;
     CGFloat  _contentY;
 }
 
@@ -392,6 +397,7 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     blink.repeatCount = 1e9f;
     [adot.layer addAnimation:blink forKey:@"blink"];
     [bar addSubview:adot];
+    _dot = adot;
 
     // reduit le panneau a la pastille : indispensable en jeu
     UIButton *mini = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -479,6 +485,10 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
 }
 
 - (void)tick {
+    // point d'etat en haut a droite : vert = masquage pose, rouge = non pose
+    BOOL st = xz_stealth2_state() != 0;
+    _dot.backgroundColor = st ? XZ_GREEN : [UIColor colorWithRed:1.0 green:0.1 blue:0.15 alpha:1.0];
+    _dot.layer.shadowColor = _dot.backgroundColor.CGColor;
     _stBase.text = [NSString stringWithFormat:@"0x%llx",
                     (unsigned long long)GetIl2CppBase()];
     _stHook.text = g_hookInstalled ? XZS(18) : XZS(17);
@@ -617,8 +627,6 @@ static void InstallLateUpdateHook() {
 // Masquage ciblé de notre image pour libac_sdk (voir stealth2.c).
 // Le constructeur de stealth2.c s'en occupe déjà ; ce rappel couvre le cas
 // où l'anti-cheat serait mappé après nous.
-extern "C" void xz_stealth2_retry(void);
-
 __attribute__((constructor))
 static void initMenu() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{

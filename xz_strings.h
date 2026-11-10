@@ -25,14 +25,15 @@ static const unsigned char xz_s19[] = { 0x02, 0x00, 0x0A, 0x08, 0x15, 0x10, 0x1F
 static const unsigned char xz_s20[] = { 0x33, 0x36, 0x35, 0x3B, 0x3E, 0x3F, 0x28 };
 static const unsigned char xz_s21[] = { 0x37, 0x35, 0x37, 0x35, 0x00, 0x38, 0x3B, 0x3E, 0x35, 0x2F };
 static const unsigned char xz_s22[] = { 0x22 };
+static const unsigned char xz_s23[] = { 0x1B, 0x0F, 0x0E, 0x15 };
 
-#define XZ_COUNT 23
+#define XZ_COUNT 24
 static NSString *XZS(int i) {
     static const unsigned char *tab[XZ_COUNT] = {
-        xz_s0, xz_s1, xz_s2, xz_s3, xz_s4, xz_s5, xz_s6, xz_s7, xz_s8, xz_s9, xz_s10, xz_s11, xz_s12, xz_s13, xz_s14, xz_s15, xz_s16, xz_s17, xz_s18, xz_s19, xz_s20, xz_s21, xz_s22
+        xz_s0, xz_s1, xz_s2, xz_s3, xz_s4, xz_s5, xz_s6, xz_s7, xz_s8, xz_s9, xz_s10, xz_s11, xz_s12, xz_s13, xz_s14, xz_s15, xz_s16, xz_s17, xz_s18, xz_s19, xz_s20, xz_s21, xz_s22, xz_s23
     };
     static const unsigned short len[XZ_COUNT] = {
-        9, 6, 6, 9, 6, 7, 3, 11, 6, 6, 8, 3, 6, 4, 4, 7, 2, 3, 5, 19, 7, 10, 1
+        9, 6, 6, 9, 6, 7, 3, 11, 6, 6, 8, 3, 6, 4, 4, 7, 2, 3, 5, 19, 7, 10, 1, 4
     };
     if (i < 0 || i >= XZ_COUNT) return @"";
     const unsigned char *p = tab[i];

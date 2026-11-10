@@ -6,6 +6,7 @@
 #import <mach/vm_map.h>
 #import <objc/runtime.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <QuartzCore/QuartzCore.h>
 
 #import "xz_strings.h"
 
@@ -36,7 +37,9 @@ static BOOL g_aimbotEnabled = NO;
 static BOOL g_flyEnabled = NO;
 static BOOL g_testMode = NO;
 static BOOL g_hookInstalled = NO;
-static BOOL g_injected = NO;
+static BOOL g_injected = NO;   // master: actif seulement apres armement
+static BOOL g_auto = NO;       // armement automatique apres login
+static NSTimeInterval g_startTime = 0;
 
 static void InstallLateUpdateHook(void);
 
@@ -131,7 +134,7 @@ static void CachePlayer(uintptr_t player) {
         return;
     }
 
-    if (!g_espEnabled) return;
+    if (!g_espEnabled || !g_injected) return;
 
     CGSize screen = self.bounds.size;
     for (int i = 0; i < g_playerCount; i++) {
@@ -272,6 +275,7 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     UILabel *_stEsp;
     UILabel *_stInj;
     MiniToggle *_injSwitch;
+    MiniToggle *_autoSwitch;
     UIView *_dot;
     CGFloat  _contentY;
 }
@@ -429,7 +433,8 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
 
     _contentY = 0;
     [self sec:XZS(3)];
-    _injSwitch = [self row:XZS(4) action:@selector(sw0:) on:g_injected];
+    _injSwitch = [self row:XZS(2) action:@selector(sw0:) on:g_injected];
+    _autoSwitch = [self row:XZS(23) action:@selector(sw5:) on:g_auto];
 
     [self sec:XZS(5)];
     [self row:XZS(6) action:@selector(sw1:) on:g_espEnabled];
@@ -491,12 +496,24 @@ static UIFont *XZMono(CGFloat size, UIFontWeight weight) {
     _stInj.text = g_injected ? XZS(16) : XZS(17);
     _stInj.textColor = g_injected ? XZ_GREEN : XZ_MUTED;
     if (g_injected && !_injSwitch.on) _injSwitch.on = YES;
+
+    // AUTO : on attend ~90 s (auth/lobby), puis on installe le hook en
+    // lecture seule et on arme des qu'un joueur est vu. Rien avant.
+    if (g_auto) {
+        double up = CACurrentMediaTime() - g_startTime;
+        if (!g_hookInstalled && up > 90.0) InstallLateUpdateHook();
+        if (g_hookInstalled && !g_injected && g_playerCount > 0) {
+            g_injected = YES;
+            if (!_injSwitch.on) _injSwitch.on = YES;
+        }
+    }
 }
 
 - (void)sw1:(MiniToggle*)s { g_espEnabled = s.on; }
 - (void)sw3:(MiniToggle*)s { g_aimbotEnabled = s.on; }
 - (void)sw4:(MiniToggle*)s { g_flyEnabled = s.on; }
 - (void)sw2:(MiniToggle*)s { g_testMode = s.on; }
+- (void)sw5:(MiniToggle*)s { g_auto = s.on; }
 
 - (void)sw0:(MiniToggle*)s {
     if (s.on && !g_hookInstalled) InstallLateUpdateHook();
@@ -618,6 +635,7 @@ static void InstallLateUpdateHook() {
 // ============================================================
 __attribute__((constructor))
 static void initMenu() {
+    g_startTime = CACurrentMediaTime();
     // Laisse le jeu démarrer (auth/update) avant d'afficher quoi que ce soit.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
 #ifndef FF_NO_UI

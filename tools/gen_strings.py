@@ -28,6 +28,7 @@ STRINGS = [
     "iloader",            # 20
     "momoZbadou",         # 21
     "x",                  # 22
+    "AUTO",               # 23
 ]
 
 
